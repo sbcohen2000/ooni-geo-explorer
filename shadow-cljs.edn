@@ -1,0 +1,16 @@
+;; shadow-cljs configuration
+{:source-paths
+ ["src/dev"
+  "src/main"
+  "src/test"]
+
+ :dependencies
+ [[org.clojure/core.async "1.3.610"]]
+
+ :dev-http {8080 "public" 8081 "out/test"}
+
+ :builds
+ {:main
+  {:target :browser
+   :modules {:main {:init-fn sc.app/init!}}
+   :devtools {:after-load sc.app/reload!}}}}
