@@ -43,31 +43,15 @@
     (set! (.. canvas -height) device-px-height)
     (.scale ctx dpr dpr)))
 
-(defn degs-to-rads
-  [angle]
-  (/ (* js/Math.PI angle) 180))
-
-(def pi js/Math.PI)
-(def tau (* 2 js/Math.PI))
-
-(defn mercator
-  [lat lon w h phase]
-  (let [pi-4 (/ pi 4)
-        lat-rads (degs-to-rads lat)
-        lon-rads (degs-to-rads lon)
-        x (- lat-rads phase)
-        y (js/Math.log(js/Math.tan(+ pi-4 (/ lon-rads 2))))]
-    [(* (+ x pi) (/ w tau)) (* (- pi y) (/ h tau))]))
-
 (defn polygon
-  [p w h ctx]
-  (when (seq p)
-    (let [[lat lon] (first p)
-          [x' y'] (mercator lat lon w h 0)]
-      (.beginPath ctx)
+  [poly proj ctx]
+  (.beginPath ctx)
+  (when (seq poly)
+    (let [p (first poly)
+          [x' y'] (proj p)]
       (.moveTo ctx x' y')))
-  (doseq [[lat lon] p]
-    (let [[x' y'] (mercator lat lon w h 0)]
+  (doseq [p poly]
+    (let [[x' y'] (proj p)]
       (.lineTo ctx x' y')))
   (.stroke ctx))
 
