@@ -1,17 +1,19 @@
 (ns sc.app
   (:require
+   [cljs.core.async :refer [chan put! go-loop <!]]
    [sc.canvas]
-   [cljs.core.async :refer [chan put! go go-loop <! >!]]
+   [sc.map]
+   [sc.network]
    [sc.rect]
    [sc.vector2 :as v]))
 
-(defonce geo-data (atom []))
+(defonce event-stream (chan))
 
 ;;;; == Resizing =============================================================
 
 (defonce on-resize
   (fn []
-   (sc.canvas/resize-canvas (sc.canvas/getContext))))
+    (put! event-stream [:resize])))
 
 (defn setup-resize-handler
   []
@@ -21,9 +23,8 @@
 
 ;;;; == Dragging / Clicking ==================================================
 
-(defonce event-stream (chan))
-(defonce drag-state (atom nil)) ;; internal use only, clients should
-                                ;; only read event-stream
+;; internal use only, clients should;; only read event-stream
+(defonce drag-state (atom nil))
 
 (defonce on-pointer-start
   (fn [ev]
@@ -31,7 +32,7 @@
       (let [x (.. ev -offsetX)
             y (.. ev -offsetY)]
         (.setPointerCapture (.. ev -currentTarget) (.. ev -pointerId))
-        (reset! drag-state {:initial [x y]})))))
+        (reset! drag-state {:initial [x y] :started false})))))
 
 (defonce on-pointer-end
   (fn [ev]
@@ -39,9 +40,11 @@
         (let [x (.. ev -offsetX)
               y (.. ev -offsetY)]
           ;; If the distance from the initial start point is less
-          ;; than the threshold, treat this as a click.
-          (when (<= (v/distance (:initial @drag-state) [x y]) 3)
-            (put! event-stream [:click {:p [x y]}]))))
+          ;; than the threshold, treat this as a click. Else,
+          ;; it's the end of a drag action.
+          (if (<= (v/distance (:initial @drag-state) [x y]) 3)
+            (put! event-stream [:click {:p [x y]}])
+            (put! event-stream [:drag-end @drag-state]))))
       (reset! drag-state nil)))
 
 (defonce on-pointer-move
@@ -52,7 +55,14 @@
           ;; If the distance from the initial start point is
           ;; greater than some threshold, emit drag events.
           (when (> (v/distance (:initial @drag-state) [x y]) 3)
-            (put! event-stream [:drag (assoc @drag-state :p [x y])]))))))
+            ;; If the drag state already contains a point, emit a drag
+            ;; event. If we haven't added a point yet, this is the
+            ;; first drag event.
+            (if (:started @drag-state)
+              (put! event-stream [:drag (assoc @drag-state :p [x y])])
+              (do
+                (swap! drag-state #(assoc % :started true))
+                (put! event-stream [:drag-start @drag-state]))))))))
 
 (defonce on-touch-start
   (fn [ev] (.preventDefault ev)))
@@ -72,96 +82,58 @@
     (.addEventListener    canvas "pointermove"   on-pointer-move)
     (.addEventListener    canvas "touchstart"    on-touch-start)))
 
-(defn fetch-json
-  "Request the JSON resource at the given URL, and return a channel
-  which will receive a Clojure dictionary representing the JSON
-  response."
-  [url]
-  (let [response (chan)]
-    (-> (js/fetch url)
-      (.then #(.json %))
-      (.then #(js->clj % :keywordize-keys true))
-      (.then #(put! response %)))
-    response))
+(defonce on-wheel
+  (fn [ev]
+    (let [dir (js/Math.sign (.. ev -deltaY))
+          x (.. ev -offsetX)
+          y (.. ev -offsetY)]
+      (put! event-stream [:wheel {:dir dir :p [x y]}]))))
 
-(def pi js/Math.PI)
-(def tau (* 2 js/Math.PI))
-
-(defn degs-to-rads
-  [angle]
-  (/ (* pi angle) 180))
-
-(def initial-model
-  {:map-viewport [0 0 360 180]})
-
-(defn mercator
-  " Mercator projection of the latitude and longitude into pixel coordinates.
-
-  src is a rectangle in degrees, 0 being the north pole, 180, the south pole.
-  dst is a rectangle in pixel coordinates.
-  "
-  [src dst]
-  (fn [[lat lon]]
-    (let [pi-4 (/ pi 4)
-          src-rads (sc.rect/scale src (/ pi 180))
-          lat-rads (degs-to-rads lat)
-          lon-rads (degs-to-rads lon)
-          ;; x is on [-pi, pi]
-          x lat-rads
-          ;; y is on [-pi, pi]
-          y (js/Math.log(js/Math.tan(+ pi-4 (/ lon-rads 2))))
-
-          lat-scale (/ tau (sc.rect/width src-rads))
-          lon-scale (/ pi  (sc.rect/height src-rads))
-          x-src (* lat-scale (- x (sc.rect/left src-rads)))
-          y-src (* lon-scale (- y (sc.rect/top src-rads)))]
-      [(* (+ x-src pi) (/ (sc.rect/width dst) tau))
-       (* (- pi y-src) (/ (sc.rect/height dst) tau))])))
-
-(defn draw-geometry
-  "Draw a country's border geometry from the rectangle src into the destination dst.
-
-  See [[mercator]].
-  "
-  [geometry src dst ctx]
-  (let [proj (mercator src dst)]
-    (doseq [polygon geometry]
-     (when (seq polygon)
-       (let [outer-ring (first polygon)]
-         (sc.canvas/polygon outer-ring proj ctx)))
-     (doseq [hole polygon]
-       (sc.canvas/polygon hole proj ctx)))))
-
-(defn draw-all
-  "Draw the entire map"
+(defn setup-wheel-handler
   []
-  (let [ctx (sc.canvas/getContext)
-        src [0 0 360 180]
-        dst [0 0 500 500]]
-    (sc.canvas/clear ctx)
-    (doseq [cc (keys @geo-data)]
-     (draw-geometry (:geometry (cc @geo-data)) src dst ctx))))
+  (let [canvas (.getElementById js/document "canvas")]
+    (.removeEventListener canvas "wheel" on-wheel)
+    (.addEventListener canvas "wheel" on-wheel)))
 
-(defn doit
-  []
-  (go (let [data (<! (fetch-json "./geo-data.json"))]
-        (reset! geo-data data))))
+(defonce app-state (atom {}))
+
+(declare handler)
+(declare repaint)
+
+(defonce event-loop
+  (go-loop []
+    (let [ev (<! event-stream)
+          state' (handler @app-state ev)]
+      (repaint state')
+      (reset! app-state state')
+      (recur))))
+
+(defn repaint
+  "Repaint the app state."
+  [state]
+  (sc.map/paint (:map state) (:ctx state)))
+
+(defn handler
+  "Handle events."
+  [state [tag & props :as ev]]
+  (case tag
+    :init {:ctx (sc.canvas/getContext)
+           :map (sc.map/model)}
+    :resize (let [[w' h'] (sc.canvas/resize-canvas (:ctx state))]
+              (update state :map #(sc.map/handler % [:resize {:w w' :h h'}])))
+    (update state :map #(sc.map/handler % ev))))
 
 (defn init!
   []
+  (put! event-stream [:init])
   (setup-resize-handler)
   (setup-pointer-capture-handler)
-  (doit)
+  (setup-wheel-handler)
   (println "init!"))
 
 (defn reload!
   []
   (setup-resize-handler)
   (setup-pointer-capture-handler)
-  (draw-all)
+  (setup-wheel-handler)
   (println "reload!"))
-
-(go-loop []
-  (let [ev (<! event-stream)]
-    (println ev)
-    (recur)))

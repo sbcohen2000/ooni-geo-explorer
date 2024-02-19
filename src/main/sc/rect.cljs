@@ -1,5 +1,9 @@
 (ns sc.rect)
 
+(defn from-bounds
+  [left top right bottom]
+  [left top (- right left) (- bottom top)])
+
 (defn x
   [[x _ _ _]]
   x)
@@ -32,6 +36,11 @@
   [[_ y _ h]]
   (+ y h))
 
+(defn upper-left
+  [[x y _ _]] [x y])
+
 (defn scale
-  [[x y w h] s]
-  [(* s x) (* s y) (* s w) (* s h)])
+  ([[x y w h] s]
+   [(* s x) (* s y) (* s w) (* s h)])
+  ([[x y w h] sx sy]
+   [(* sx x) (* sy y) (* sx w) (* sy h)]))

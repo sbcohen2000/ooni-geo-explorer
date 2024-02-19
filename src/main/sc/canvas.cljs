@@ -29,7 +29,8 @@
 
 (defn resize-canvas
   "Set the canvas to fill the window, and set the canvas resolution to
-  the actual device resolution."
+  the actual device resolution. Return the size of the canvas in
+  pixels."
   [ctx]
   (let [canvas (.. ctx -canvas)
         dpr (or js/devicePixelRatio 1)
@@ -41,7 +42,7 @@
     (set! (.. canvas -style -height) (str css-px-height "px"))
     (set! (.. canvas -width) device-px-width)
     (set! (.. canvas -height) device-px-height)
-    (.scale ctx dpr dpr)))
+    [device-px-width device-px-height]))
 
 (defn polygon
   [poly proj ctx]
