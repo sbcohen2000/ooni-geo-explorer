@@ -103,11 +103,45 @@
     [(- px (* s (- px x)))
      (- py (* s (- py y))) w' h']))
 
+(defn ensure-aspect
+  "Ensure that the input rectangle has the given aspect ratio."
+  [[x y w _] a]
+  [x y w (* w a)])
+
+(defn ensure-bounded
+  "Modify the input rect to fit within the bounds of the map."
+  [rect]
+  (-> rect
+      (#(if (or (> (sc.rect/width %) 360)
+                (> (sc.rect/height %) 360))
+          (sc.rect/scale-to-fit % 360 360) %))
+      (#(if (> (sc.rect/right %) 360)
+          (sc.rect/offset % [(- 360 (sc.rect/right %)) 0])
+          %))
+      (#(if (< (sc.rect/left %) 0)
+          (sc.rect/offset % [(- (sc.rect/left %)) 0])
+          %))
+      (#(if (< (sc.rect/top %) 0)
+          (sc.rect/offset % [0 (- (sc.rect/top %))])
+          %))
+      (#(if (> (sc.rect/bottom %) 360)
+          (sc.rect/offset % [0 (- 360 (sc.rect/bottom %))])
+          %))))
+
+(defn update-src-if-valid
+  "Update the source rect with the given function, but only if the new
+  source rect is valid after the transformation."
+  [state f]
+  (let [f' #(ensure-bounded (f %))]
+    (update state :src f')))
+
 (defn handler
   "Update the state given an event."
   [state [tag props]]
   (case tag
-    :resize (assoc state :w (:w props) :h (:h props))
+    :resize (-> state
+                (assoc :w (:w props) :h (:h props))
+                (update-src-if-valid #(ensure-aspect % (/ (:h props) (:w props)))))
 
     :click (let [dst [0 0 (:w state) (:h state)]
                  proj (px-to-degrees (:src state) dst)]
@@ -124,12 +158,12 @@
     (let [proj (px-to-degrees (:src state) (dst state))
           ofs (v/- (proj (:initial props)) (proj (:p props)))
           [x y] (v/+ ofs (:drag-offset state))]
-      (update state :src #(vector x y (sc.rect/width %) (sc.rect/height %))))
+      (update-src-if-valid state #(vector x y (sc.rect/width %) (sc.rect/height %))))
 
     :wheel
     (let [scale (+ 1.0 (* (:dir props) 0.1))
           proj (px-to-degrees (:src state) (dst state))]
-      (update state :src #(zoom % (proj (:p props)) scale)))
+      (update-src-if-valid state #(zoom % (proj (:p props)) scale)))
 
     state))
 

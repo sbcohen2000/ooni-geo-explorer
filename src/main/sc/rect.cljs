@@ -39,8 +39,20 @@
 (defn upper-left
   [[x y _ _]] [x y])
 
+(defn offset
+  "Offset the rectangle by the given vector"
+  [[x y w h] [ox oy]]
+  [(+ x ox) (+ y oy) w h])
+
 (defn scale
   ([[x y w h] s]
    [(* s x) (* s y) (* s w) (* s h)])
   ([[x y w h] sx sy]
    [(* sx x) (* sy y) (* sx w) (* sy h)]))
+
+(defn scale-to-fit
+  "Scale the rectangle such that it fits within a box
+  of size `w'`x`h'`."
+  [[x y w h] w' h']
+  (let [scale (min (/ w' w) (/ h' h))]
+    [x y (* scale w) (* scale h)]))
