@@ -5,6 +5,7 @@
    [sc.map]
    [sc.network]
    [sc.rect]
+   [sc.timeline]
    [sc.vector2 :as v]))
 
 (defonce event-stream (chan))
@@ -111,17 +112,25 @@
 (defn repaint
   "Repaint the app state."
   [state]
-  (sc.map/paint (:map state) (:ctx state)))
+  (sc.canvas/with-offset [0 0] (:ctx state)
+    (sc.timeline/paint (:timeline state) (:ctx state)))
+  (sc.canvas/with-offset [0 50] (:ctx state)
+    (sc.map/paint (:map state) (:ctx state))))
 
 (defn handler
   "Handle events."
   [state [tag & props :as ev]]
   (case tag
     :init {:ctx (sc.canvas/getContext)
-           :map (sc.map/model)}
+           :map (sc.map/model)
+           :timeline (sc.timeline/model)}
     :resize (let [[w' h'] (sc.canvas/resize-canvas (:ctx state))]
-              (update state :map #(sc.map/handler % [:resize {:w w' :h h'}])))
-    (update state :map #(sc.map/handler % ev))))
+              (-> state
+                  (update :timeline #(sc.timeline/handler % [:resize {:w w' :h 50}]))
+                  (update :map #(sc.map/handler % [:resize {:w w' :h (- h' 50)}]))))
+    (-> state
+        (update :timeline #(sc.timeline/handler % ev))
+        (update :map #(sc.map/handler % ev)))))
 
 (defn init!
   []

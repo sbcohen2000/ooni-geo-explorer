@@ -142,8 +142,24 @@
    :darkslategray        "#2F4F4F"
    :black                "#000000"})
 
+(defn digit-to-hex
+  [n]
+  ([\0 \1 \2 \3 \4 \5 \6 \7 \8 \9 \A \B \C \D \E \F] n))
+
+(defn alpha-to-hex
+  "Assuming a is a number in [0, 1], return a 2-digit hexadecimal code
+  corresponding to the number on the scale [0-255]."
+  [a]
+  (let [a-clamped (max (min a 1) 0)
+        a-scaled  (js/Math.round (* 255 a-clamped))]
+    (str (digit-to-hex (js/Math.trunc (/ a-scaled 16)))
+         (digit-to-hex (mod a-scaled 16)))))
+
 (defn color-code-of-symbol
   "Retrieve the HTML color code string corresponding to the HTML color
   name, or black if the name doesn't exist."
-  [sym]
-  (get colors sym "#000000"))
+  ([sym]
+   (get colors sym "#000000"))
+  ([sym alpha]
+   (let [base (get colors sym "#000000")]
+     (str base (alpha-to-hex alpha)))))
