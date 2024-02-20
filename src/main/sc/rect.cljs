@@ -50,9 +50,23 @@
   ([[x y w h] sx sy]
    [(* sx x) (* sy y) (* sx w) (* sy h)]))
 
+(defn shrink
+  ([[x y w h] s]
+   (let [w' (* w s)
+         h' (* h s)]
+     [(+ x (/ w' 2)) (+ y (/ h' 2)) w' h'])))
+
 (defn scale-to-fit
   "Scale the rectangle such that it fits within a box
   of size `w'`x`h'`."
   [[x y w h] w' h']
   (let [scale (min (/ w' w) (/ h' h))]
     [x y (* scale w) (* scale h)]))
+
+(defn intersection?
+  "Check if two rectangles overlap."
+  [a b]
+  (and (< (left a) (right b))
+       (< (left b) (right a))
+       (< (top a) (bottom b))
+       (< (top b) (bottom a))))

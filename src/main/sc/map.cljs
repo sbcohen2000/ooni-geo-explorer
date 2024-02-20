@@ -71,21 +71,35 @@
       polygon))
    geometry))
 
+(def pos-inf js/Number.POSITIVE_INFINITY)
+(def neg-inf js/Number.NEGATIVE_INFINITY)
+
+(defn geometry-bbox
+  [geometry]
+  (let [all-points (mapcat (fn [ring] (mapcat concat ring)) geometry)
+        bounds (reduce
+                (fn [[l t r b] [x y]]
+                  [(min x l) (min y t) (max x r) (max y b)])
+                [pos-inf pos-inf neg-inf neg-inf] all-points)]
+    (apply sc.rect/from-bounds bounds)))
+
 (defn model
   "Return the initial state of the map."
   []
   (when-not @geo-data
     (go
-      (let [data (<! (sc.network/fetch-json "./geo-data.json"))
-            data-proj (into {} (map (fn [[cc v]]
-                                      [cc (update v :geometry project-geometry)])
-                                    data))]
+      (let [data (->> (<! (sc.network/fetch-json "./geo-data.json"))
+                      (map (fn [[cc v]]
+                             [cc (update v :geometry project-geometry)]))
+                      (map (fn [[cc v]]
+                             [cc (assoc v :bbox (geometry-bbox (:geometry v)))])))]
         (println "Loaded geo data!")
-        (reset! geo-data data-proj))))
+        (reset! geo-data (into {} data)))))
   {:src [0 0 360 360] ;; in degrees
    :drag-offset nil   ;; in degrees
    :w 0
-   :h 0})
+   :h 0
+   :visible-ccs #{}})
 
 (defn dst
   "Get the rendering destination rectangle."
@@ -128,12 +142,25 @@
           (sc.rect/offset % [0 (- 360 (sc.rect/bottom %))])
           %))))
 
+(defn get-visible-ccs
+  "Return a set of visible country codes given the map state."
+  [state]
+  (let [rect (:src state)]
+    (set (filter #(sc.rect/intersection?
+                   rect
+                   (:bbox (% @geo-data)))
+                 (keys @geo-data)))))
+
 (defn update-src-if-valid
   "Update the source rect with the given function, but only if the new
-  source rect is valid after the transformation."
+  source rect is valid after the transformation.
+
+  Update visible-ccs given the new src rect."
   [state f]
   (let [f' #(ensure-bounded (f %))]
-    (update state :src f')))
+    (-> state
+        (update :src f')
+        (#(assoc % :visible-ccs (get-visible-ccs %))))))
 
 (defn handler
   "Update the state given an event."
@@ -152,7 +179,9 @@
     (assoc state :drag-offset (sc.rect/upper-left (:src state)))
 
     :drag-end
-    (assoc state :drag-offset nil)
+    (do
+      (println (:visible-ccs state))
+      (assoc state :drag-offset nil))
 
     :drag
     (let [proj (px-to-degrees (:src state) (dst state))
@@ -181,14 +210,18 @@
        (doseq [hole (rest polygon)]
          (sc.canvas/polygon hole proj ctx))))))
 
-(defn draw-all
-  "Draw the entire map"
-  [src dst ctx]
+(defn draw-visible-ccs
+  "Draw the entire visible map"
+  [state ctx]
   (sc.canvas/clear ctx)
-  (doseq [cc (keys @geo-data)]
-    (draw-geometry (:geometry (cc @geo-data)) src dst ctx)))
+  (doseq [cc (:visible-ccs state)]
+    (draw-geometry
+     (:geometry (cc @geo-data))
+     (:src state)
+     (dst state)
+     ctx)))
 
 (defn paint
   "Paint the map to the canvas given its state."
   [state ctx]
-  (draw-all (:src state) [0 0 (:w state) (:h state)] ctx))
+  (draw-visible-ccs state ctx))
