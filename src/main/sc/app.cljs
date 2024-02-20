@@ -63,7 +63,7 @@
               (put! event-stream [:drag (assoc @drag-state :p [x y])])
               (do
                 (swap! drag-state #(assoc % :started true))
-                (put! event-stream [:drag-start @drag-state]))))))))
+                (put! event-stream [:drag-start (assoc @drag-state :p [x y])]))))))))
 
 (defonce on-touch-start
   (fn [ev] (.preventDefault ev)))
@@ -109,28 +109,72 @@
       (reset! app-state state')
       (recur))))
 
+(def tlh 50)
+
 (defn repaint
   "Repaint the app state."
   [state]
+  (sc.canvas/with-offset [0 tlh] (:ctx state)
+    (sc.map/paint (:map state) (:ctx state)))
   (sc.canvas/with-offset [0 0] (:ctx state)
-    (sc.timeline/paint (:timeline state) (:ctx state)))
-  (sc.canvas/with-offset [0 50] (:ctx state)
-    (sc.map/paint (:map state) (:ctx state))))
+    (sc.timeline/paint (:timeline state) (:ctx state))))
+
+(defn thread-when
+  [x test f]
+  (if (test x) (f x) x))
+
+(defn thread-if
+  [x test then else]
+  (if (test x) (then x) (else x)))
+
+(defn widget-under-point
+  "Return a symbol (either :map or :timeline) indicating the widget
+  underneath the given point `p`."
+  [state p]
+  (cond
+    (sc.rect/includes? (:map-rect state) p) :map
+    (sc.rect/includes? (:timeline-rect state) p) :timeline
+    :else nil))
 
 (defn handler
   "Handle events."
-  [state [tag & props :as ev]]
+  [state [tag props :as ev]]
   (case tag
-    :init {:ctx (sc.canvas/getContext)
-           :map (sc.map/model)
-           :timeline (sc.timeline/model)}
+    :init (let [ctx (sc.canvas/getContext)]
+            {:ctx             ctx
+             :map             (sc.map/model)
+             :map-rect        [0 tlh (sc.canvas/width ctx) (- (sc.canvas/height ctx) tlh)]
+             :timeline        (sc.timeline/model)
+             :timeline-rect   [0 0 (sc.canvas/width ctx) tlh]
+             :captured-widget nil})
     :resize (let [[w' h'] (sc.canvas/resize-canvas (:ctx state))]
               (-> state
-                  (update :timeline #(sc.timeline/handler % [:resize {:w w' :h 50}]))
-                  (update :map #(sc.map/handler % [:resize {:w w' :h (- h' 50)}]))))
-    (-> state
-        (update :timeline #(sc.timeline/handler % ev))
-        (update :map #(sc.map/handler % ev)))))
+                  (assoc  :timeline-rect [0 0 w' tlh])
+                  (update :timeline #(sc.timeline/handler % [:resize {:w w' :h tlh}]))
+                  (assoc  :map-rect [0 tlh w' (- h' tlh)])
+                  (update :map #(sc.map/handler % [:resize {:w w' :h (- h' tlh)}]))))
+    (let [state'
+          (case tag
+            :drag-start (assoc state :captured-widget (widget-under-point state (:p props)))
+            :drag-end   (assoc state :captured-widget nil)
+            state)]
+      ;; If we have a capture, forward all events to the captured
+      ;; widget.
+      (if-let [captured (:captured-widget state')]
+        (case captured
+          :map (update state' :map #(sc.map/handler % ev))
+          :timeline (update state' :timeline #(sc.timeline/handler % ev)))
+        ;; If we don't have a capture, but the event contains a point,
+        ;; forward the event only to the widget under the point.
+        (if-let [event-point (:p props)]
+          (let [target-widget (widget-under-point state' event-point)]
+            (case target-widget
+              :map (update state' :map #(sc.map/handler % ev))
+              :timeline (update state' :timeline #(sc.timeline/handler % ev))))
+          ;; Otherwise, forward the event to all widgets.
+          (-> state'
+              (update :map      #(sc.map/handler % ev))
+              (update :timeline #(sc.timeline/handler % ev))))))))
 
 (defn init!
   []

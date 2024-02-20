@@ -70,3 +70,11 @@
        (< (left b) (right a))
        (< (top a) (bottom b))
        (< (top b) (bottom a))))
+
+(defn includes?
+  "Check if a point is contained within the rectangle."
+  [[x y w h] [px py]]
+  (and (>= px x)
+       (>= py y)
+       (< px (+ x w))
+       (< py (+ y h))))

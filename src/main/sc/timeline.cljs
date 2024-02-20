@@ -23,4 +23,4 @@
 (defn paint
   "Paint the timeline to the canvas given its current state."
   [state ctx]
-  (sc.canvas/rectangle (dst state) ctx))
+  (sc.canvas/rectangle (dst state) ctx :fill-color :white :color :red))
