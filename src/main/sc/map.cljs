@@ -83,6 +83,38 @@
                 [pos-inf pos-inf neg-inf neg-inf] all-points)]
     (apply sc.rect/from-bounds bounds)))
 
+(defn ensure-aspect
+  "Ensure that the input rectangle has the given aspect ratio."
+  [[x y w _] a]
+  [x y w (* w a)])
+
+(def min-lon 0)
+(def max-lon 360)
+(def min-lat 30)
+(def max-lat 320)
+
+(defn ensure-bounded
+  "Modify the input rect to fit within the bounds of the map."
+  [rect]
+  (let [w (- max-lon min-lon)
+        h (- max-lat min-lat)]
+    (-> rect
+        (#(if (or (> (sc.rect/width %) w)
+                  (> (sc.rect/height %) h))
+            (sc.rect/scale-to-fit % w h) %))
+        (#(if (> (sc.rect/right %) max-lon)
+            (sc.rect/offset % [(- max-lon (sc.rect/right %)) 0])
+            %))
+        (#(if (< (sc.rect/left %) min-lon)
+            (sc.rect/offset % [(- min-lon (sc.rect/left %)) 0])
+            %))
+        (#(if (< (sc.rect/top %) min-lat)
+            (sc.rect/offset % [0 (- min-lat (sc.rect/top %))])
+            %))
+        (#(if (> (sc.rect/bottom %) max-lat)
+            (sc.rect/offset % [0 (- max-lat (sc.rect/bottom %))])
+            %)))))
+
 (defn model
   "Return the initial state of the map."
   []
@@ -95,7 +127,7 @@
                              [cc (assoc v :bbox (geometry-bbox (:geometry v)))])))]
         (println "Loaded geo data!")
         (reset! geo-data (into {} data)))))
-  {:src [0 0 360 360] ;; in degrees
+  {:src [min-lon min-lat (- max-lon min-lon) (- max-lat min-lat)] ;; in degrees
    :drag-offset nil   ;; in degrees
    :w 0
    :h 0
@@ -116,31 +148,6 @@
         h' (* h s)]
     [(- px (* s (- px x)))
      (- py (* s (- py y))) w' h']))
-
-(defn ensure-aspect
-  "Ensure that the input rectangle has the given aspect ratio."
-  [[x y w _] a]
-  [x y w (* w a)])
-
-(defn ensure-bounded
-  "Modify the input rect to fit within the bounds of the map."
-  [rect]
-  (-> rect
-      (#(if (or (> (sc.rect/width %) 360)
-                (> (sc.rect/height %) 360))
-          (sc.rect/scale-to-fit % 360 360) %))
-      (#(if (> (sc.rect/right %) 360)
-          (sc.rect/offset % [(- 360 (sc.rect/right %)) 0])
-          %))
-      (#(if (< (sc.rect/left %) 0)
-          (sc.rect/offset % [(- (sc.rect/left %)) 0])
-          %))
-      (#(if (< (sc.rect/top %) 0)
-          (sc.rect/offset % [0 (- (sc.rect/top %))])
-          %))
-      (#(if (> (sc.rect/bottom %) 360)
-          (sc.rect/offset % [0 (- 360 (sc.rect/bottom %))])
-          %))))
 
 (defn get-visible-ccs
   "Return a set of visible country codes given the map state."
@@ -179,9 +186,7 @@
     (assoc state :drag-offset (sc.rect/upper-left (:src state)))
 
     :drag-end
-    (do
-      (println (:visible-ccs state))
-      (assoc state :drag-offset nil))
+    (assoc state :drag-offset nil)
 
     :drag
     (let [proj (px-to-degrees (:src state) (dst state))
