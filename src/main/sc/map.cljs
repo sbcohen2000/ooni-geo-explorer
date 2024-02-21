@@ -159,8 +159,8 @@
                  (keys @geo-data)))))
 
 (defn update-src-if-valid
-  "Update the source rect with the given function, but only if the new
-  source rect is valid after the transformation.
+  "Update the source rect with the given function, ensuring that the src
+  rect is valid after the transformation.
 
   Update visible-ccs given the new src rect."
   [state f]

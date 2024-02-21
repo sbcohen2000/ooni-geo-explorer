@@ -9,10 +9,10 @@
 (defn model
   "Return the initial state of the timeline."
   []
-  {:w 0
-   :h 0
-   :from (- (js/Date.now) (* 0.5 ms-in-month))
-   :to   (js/Date.now)})
+  {:w           0
+   :h           0
+   :src         [(- (js/Date.now) (* 0.5 ms-in-month)) (js/Date.now)]
+   :drag-offset nil})
 
 (defn find-appropriate-time-scale
   [from to]
@@ -24,7 +24,7 @@
       :else :year)))
 
 (defn create-time-scale
-  [from to]
+  [[from to]]
   (let [from-obj    (new js/Date from)
         from-hours (.getUTCHours    from-obj)
         from-days  (.getUTCDate     from-obj)
@@ -49,26 +49,89 @@
   [state]
   [0 0 (:w state) (:h state)])
 
+(defn ensure-bounded
+  [src]
+  (let [[from to] src
+        w (- to from)]
+    (-> src
+        (#(if (> w (* 20 ms-in-year))
+            [(- (second %) (* 20 ms-in-year)) (second %)]
+            %))
+        (#(if (> to (js/Date.now))
+            (let [d (- to (js/Date.now))]
+              [(- (first %) d) (- (second %) d)])
+            %)))))
+
+(defn update-src-if-valid
+  "Update the from/to source range with the given function,
+  ensuring that the source range is valid after the transformation."
+  [state f]
+  (let [f' #(ensure-bounded (f %))]
+    (update state :src f')))
+
+(defn px-to-ms
+  "Convert a value in pixels to milliseconds according to the current
+  source range.e"
+  [state x]
+  (let [[from to] (:src state)
+        x-scale (/ (:w state) (- to from))]
+    (js/Math.floor (+ (/ x x-scale) from))))
+
+(defn ms-to-px
+  "Convert a value from milliseconds to pixels according to the current
+  source range."
+  [state ms]
+  (let [[from to] (:src state)
+        x-scale (/ (:w state) (- to from))]
+    (* x-scale (- ms from))))
+
+(defn zoom
+  "Return a new source range which is scaled by the given amount `s`,
+  holding the relative distance to `x` from each edge constant."
+  [range x s]
+  (let [[from to] range
+        w'        (* (- to from) s)
+        from'     (- x (* s (- x from)))]
+    [from' (+ from' w')]))
+
 (defn handler
   "Update the state given an event."
   [state [tag props]]
   (case tag
     :resize (-> state
                 (assoc :w (:w props) :h (:h props)))
+
+    :drag-start
+    (assoc state :drag-offset (:src state))
+
+    :drag-end
+    (assoc state :drag-offset nil)
+
+    :drag
+    (let [cur-ms     (px-to-ms state (first (:p props)))
+          initial-ms (px-to-ms state (first (:initial props)))
+          ofs        (- initial-ms cur-ms)
+          src'       (map (partial + ofs) (:drag-offset state))]
+      (update-src-if-valid state (constantly src')))
+
+    :wheel
+    (let [scale (+ 1.0 (* (:dir props) 0.1))
+          x     (px-to-ms state (first (:p props)))]
+      (update-src-if-valid state #(zoom % x scale)))
+
     state))
 
 (defn paint-time-scale
   [state ctx]
-  (let [scale (create-time-scale (:from state) (:to state))
-        height (:h state)
-        x-scale (/ (:w state) (- (:to state) (:from state)))]
+  (let [scale     (create-time-scale (:src state))
+        height    (:h state)]
     (doseq [time scale]
-      (let [x (* x-scale (- time (:from state)))
-            str (.toDateString (new js/Date time))]
-        (sc.canvas/with-offset [x height] ctx
-          (sc.canvas/with-rotation 0.8 ctx
-            (sc.canvas/text str [0 0] ctx)))
-        (sc.canvas/line [x 0] [x height] ctx)))))
+     (let [x (ms-to-px state time)
+           str (.toDateString (new js/Date time))]
+       (sc.canvas/with-offset [x height] ctx
+         (sc.canvas/with-rotation 0.8 ctx
+           (sc.canvas/text str [0 0] ctx)))
+       (sc.canvas/line [x 0] [x height] ctx)))))
 
 (defn paint
   "Paint the timeline to the canvas given its current state."
