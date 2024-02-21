@@ -26,23 +26,52 @@
 (defn create-time-scale
   [[from to]]
   (let [from-obj    (new js/Date from)
-        from-hours (.getUTCHours    from-obj)
-        from-days  (.getUTCDate     from-obj)
-        from-month (.getUTCMonth    from-obj)
-        from-year  (.getUTCFullYear from-obj)
+        from-hours (.getHours    from-obj)
+        from-days  (.getDate     from-obj)
+        from-month (.getMonth    from-obj)
+        from-year  (.getFullYear from-obj)
         time-scale (find-appropriate-time-scale from to)
         start-time (case time-scale
-                     :hour  (js/Date.UTC from-year from-month from-days from-hours)
-                     :day   (js/Date.UTC from-year from-month from-days)
-                     :month (js/Date.UTC from-year from-month)
-                     :year  (js/Date.UTC from-year))
+                     :hour  (new js/Date from-year from-month from-days from-hours)
+                     :day   (new js/Date from-year from-month from-days)
+                     :month (new js/Date from-year from-month)
+                     :year  (new js/Date from-year))
         dt (case time-scale
              :hour  ms-in-hour
              :day   ms-in-day
              :month ms-in-month
              :year  ms-in-year)
-        n-points (js/Math.ceil (/ (- to from) dt))]
-    (map #(+ start-time (* % dt)) (range 0 n-points))))
+        n-points (js/Math.ceil (/ (- to start-time) dt))]
+    [dt (map #(+ (.valueOf start-time) (* % dt)) (range 0 n-points))]))
+
+(defn month-name
+  [idx]
+  (["Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"] idx))
+
+(defn hours-string
+  [hours]
+  (cond
+    (= hours 0) "12am"
+    (> hours 12) (str (- hours 12) "pm")
+    (= hours 12) "12pm"
+    :else (str hours "am")))
+
+(defn date-string
+  "Convert a time in milliseconds to a string, using specificity most
+  appropriate for the given source range."
+  [[from to] time]
+  (let [time-obj (new js/Date time)]
+    (case (find-appropriate-time-scale from to)
+      :hour  (str (hours-string (.getHours time-obj)) ", "
+                  (month-name (.getMonth time-obj)) " "
+                  (.getDate time-obj) " "
+                  (.getFullYear time-obj))
+      :day   (str (month-name (.getMonth time-obj)) " "
+                  (.getDate time-obj) " "
+                  (.getFullYear time-obj))
+      :month (str (month-name (.getMonth time-obj)) " "
+                  (.getFullYear time-obj))
+      :year  (str (.getFullYear time-obj)))))
 
 (defn dst
   "Get the rendering destination rectangle."
@@ -85,6 +114,14 @@
         x-scale (/ (:w state) (- to from))]
     (* x-scale (- ms from))))
 
+(defn ms-to-px-relative
+  "Convert a value from relative milliseconds to pixels according to
+  the current source range."
+  [state ms]
+  (let [[from to] (:src state)
+        x-scale (/ (:w state) (- to from))]
+    (* ms x-scale)))
+
 (defn zoom
   "Return a new source range which is scaled by the given amount `s`,
   holding the relative distance to `x` from each edge constant."
@@ -123,12 +160,15 @@
 
 (defn paint-time-scale
   [state ctx]
-  (let [scale     (create-time-scale (:src state))
-        height    (:h state)]
+  (let [[dt scale] (create-time-scale (:src state))
+        ;; Use dt to calculate the offset needed to center each label
+        ;; in the region.
+        dx (ms-to-px-relative state dt)
+        height     (:h state)]
     (doseq [time scale]
      (let [x (ms-to-px state time)
-           str (.toDateString (new js/Date time))]
-       (sc.canvas/with-offset [x height] ctx
+           str (date-string (:src state) (+ time (/ dt 2)))]
+       (sc.canvas/with-offset [(+ x (/ dx 2)) height] ctx
          (sc.canvas/with-rotation 0.8 ctx
            (sc.canvas/text str [0 0] ctx)))
        (sc.canvas/line [x 0] [x height] ctx)))))
