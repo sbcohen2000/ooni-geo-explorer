@@ -8,12 +8,16 @@
 (defn- add-point
   "Add a point at `k` into the tree with value `v`."
   [tree k v]
-  (if (nil? tree)
-    {:key k
-     :value v}
-    (if (< k (:key tree))
-      (assoc tree :left (add-point (:left tree) k v))
-      (assoc tree :right (add-point (:right tree) k v)))))
+  (cond
+    (= k (:key tree)) (assoc tree :value v)   ;; replace value
+
+    (nil? tree) {:key k :value v}             ;; new node
+
+    (< k (:key tree))                         ;; traverse left
+    (assoc tree :left (add-point (:left tree) k v))
+
+    :else                                     ;; traverse right
+    (assoc tree :right (add-point (:right tree) k v))))
 
 (defn add-points
   [tree kvs]
