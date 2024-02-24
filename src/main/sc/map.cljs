@@ -1,5 +1,5 @@
 (ns sc.map
-  (:require [cljs.core.async :refer [<! go close!]]
+  (:require [cljs.core.async :refer [<! go put!]]
             [sc.canvas]
             [sc.network]
             [sc.rect]
@@ -117,7 +117,7 @@
 
 (defn model
   "Return the initial state of the map."
-  []
+  [event-stream]
   (when-not @geo-data
     (go
       (let [data (->> (<! (sc.network/fetch-json "./geo-data.json"))
@@ -127,11 +127,16 @@
                              [cc (assoc v :bbox (geometry-bbox (:geometry v)))])))]
         (println "Loaded geo data!")
         (reset! geo-data (into {} data)))))
-  {:src [min-lon min-lat (- max-lon min-lon) (- max-lat min-lat)] ;; in degrees
-   :drag-offset nil   ;; in degrees
-   :w 0
-   :h 0
-   :visible-ccs #{}})
+  {:src              [min-lon min-lat (- max-lon min-lon) (- max-lat min-lat)] ;; in degrees
+   :drag-offset      nil ;; in degrees
+   :w                0
+   :h                0
+   :visible-ccs      #{}
+   :event-stream     event-stream})
+
+(defn invalidate!
+  [state]
+  (put! (:event-stream state) [:invalidate]))
 
 (defn dst
   "Get the rendering destination rectangle."
@@ -164,10 +169,16 @@
 
   Update visible-ccs given the new src rect."
   [state f]
-  (let [f' #(ensure-bounded (f %))]
-    (-> state
-        (update :src f')
-        (#(assoc % :visible-ccs (get-visible-ccs %))))))
+  (let [f' #(ensure-bounded (f %))
+        with-src (update state :src f')
+        new-ccs (get-visible-ccs with-src)]
+    ;; Check if the set of visible countries has changed.
+    ;; If so, we need to invalidate!.
+    (if (= new-ccs (:visible-ccs with-src))
+      with-src
+      (let [with-ccs (assoc with-src :visible-ccs new-ccs)]
+        (invalidate! with-ccs)
+        with-ccs))))
 
 (defn handler
   "Update the state given an event."

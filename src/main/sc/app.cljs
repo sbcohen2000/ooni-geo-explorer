@@ -22,7 +22,7 @@
   (.addEventListener js/window "resize" on-resize)
   (on-resize))
 
-;;;; == Dragging / Clicking ==================================================
+;;;; == Dragging / Clicking ==================================================w
 
 ;; internal use only, clients should;; only read event-stream
 (defonce drag-state (atom nil))
@@ -96,6 +96,21 @@
     (.removeEventListener canvas "wheel" on-wheel)
     (.addEventListener canvas "wheel" on-wheel)))
 
+;;;; == Clock ================================================================
+
+(defonce interval-id (atom nil))
+
+(defonce on-clock
+  (fn []
+    (put! event-stream [:clock])))
+
+(defn setup-clock
+  []
+  (when @interval-id
+    (js/clearInterval @interval-id)
+    (reset! interval-id nil))
+  (reset! interval-id (js/setInterval on-clock 1000)))
+
 (defonce app-state (atom {}))
 
 (declare handler)
@@ -119,14 +134,6 @@
   (sc.canvas/with-offset [0 0] (:ctx state)
     (sc.timeline/paint (:timeline state) (:ctx state))))
 
-(defn thread-when
-  [x test f]
-  (if (test x) (f x) x))
-
-(defn thread-if
-  [x test then else]
-  (if (test x) (then x) (else x)))
-
 (defn widget-under-point
   "Return a symbol (either :map or :timeline) indicating the widget
   underneath the given point `p`."
@@ -136,23 +143,42 @@
     (sc.rect/includes? (:timeline-rect state) p) :timeline
     :else nil))
 
+(defn handle-clock
+  [state]
+  (let [map      (:map state)
+        timeline (:timeline state)
+        now      (js/Date.now)]
+    (if (and (:dirty state)
+             (> (- now (:last-interaction state)) 3000))
+      (do
+       (println "do request!")
+       (assoc state :dirty false))
+      state)))
+
 (defn handler
   "Handle events."
   [state [tag props :as ev]]
   (case tag
     :init (let [ctx (sc.canvas/getContext)]
-            {:ctx             ctx
-             :map             (sc.map/model)
-             :map-rect        [0 tlh (sc.canvas/width ctx) (- (sc.canvas/height ctx) tlh)]
-             :timeline        (sc.timeline/model)
-             :timeline-rect   [0 0 (sc.canvas/width ctx) tlh]
-             :captured-widget nil})
+            {:ctx              ctx
+             :map              (sc.map/model event-stream)
+             :map-rect         [0 tlh (sc.canvas/width ctx) (- (sc.canvas/height ctx) tlh)]
+             :timeline         (sc.timeline/model event-stream)
+             :timeline-rect    [0 0 (sc.canvas/width ctx) tlh]
+             :captured-widget  nil
+             :last-interaction (js/Date.now)
+             :dirty            true})
     :resize (let [[w' h'] (sc.canvas/resize-canvas (:ctx state))]
               (-> state
                   (assoc  :timeline-rect [0 0 w' tlh])
                   (update :timeline #(sc.timeline/handler % [:resize {:w w' :h tlh}]))
                   (assoc  :map-rect [0 tlh w' (- h' tlh)])
                   (update :map #(sc.map/handler % [:resize {:w w' :h (- h' tlh)}]))))
+    :clock (handle-clock state)
+    :invalidate (assoc state
+                       :last-interaction (js/Date.now)
+                       :dirty true)
+
     (let [state'
           (case tag
             :drag-start (assoc state :captured-widget (widget-under-point state (:p props)))
@@ -182,6 +208,7 @@
   (setup-resize-handler)
   (setup-pointer-capture-handler)
   (setup-wheel-handler)
+  (setup-clock)
   (println "init!"))
 
 (defn reload!
@@ -189,4 +216,5 @@
   (setup-resize-handler)
   (setup-pointer-capture-handler)
   (setup-wheel-handler)
+  (setup-clock)
   (println "reload!"))

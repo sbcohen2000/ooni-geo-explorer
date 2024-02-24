@@ -1,5 +1,6 @@
 (ns sc.timeline
-  (:require [sc.canvas]))
+  (:require [sc.canvas]
+            [cljs.core.async :refer [put!]]))
 
 (def ms-in-year  3.154e+10)
 (def ms-in-month 2.628e+9)
@@ -8,11 +9,16 @@
 
 (defn model
   "Return the initial state of the timeline."
-  []
-  {:w           0
-   :h           0
-   :src         [(- (js/Date.now) (* 0.5 ms-in-month)) (js/Date.now)]
-   :drag-offset nil})
+  [event-stream]
+  {:w                0
+   :h                0
+   :src              [(- (js/Date.now) (* 0.5 ms-in-month)) (js/Date.now)]
+   :drag-offset      nil
+   :event-stream     event-stream})
+
+(defn invalidate!
+  [state]
+  (put! (:event-stream state) [:invalidate]))
 
 (defn find-appropriate-time-scale
   [from to]
@@ -95,8 +101,12 @@
   "Update the from/to source range with the given function,
   ensuring that the source range is valid after the transformation."
   [state f]
-  (let [f' #(ensure-bounded (f %))]
-    (update state :src f')))
+  (let [src' (ensure-bounded (f (:src state)))]
+    (if (= (:src state) src')
+      state
+      (let [with-src (assoc state :src src')]
+        (invalidate! with-src)
+        with-src))))
 
 (defn px-to-ms
   "Convert a value in pixels to milliseconds according to the current
