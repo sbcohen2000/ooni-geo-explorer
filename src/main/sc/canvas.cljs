@@ -18,6 +18,10 @@
     (set! (.-fillStyle ctx) (sc.colors/color-code-of-symbol color))
     (set! (.-fillStyle ctx) color)))
 
+(defn- stroke-width
+  [width ctx]
+  (set! (.-lineWidth ctx) width))
+
 (defn width
   "Get the width of the canvas' drawing area."
   [ctx]
@@ -50,7 +54,10 @@
     [device-px-width device-px-height]))
 
 (defn line
-  [[x1 y1] [x2 y2] ctx & {:keys [color] :or {color :black}}]
+  [[x1 y1] [x2 y2] ctx &
+   {:keys [color width]
+    :or {color :black width 1.0}}]
+  (stroke-width width ctx)
   (.beginPath ctx)
   (.moveTo ctx x1 y1)
   (.lineTo ctx x2 y2)
@@ -58,7 +65,10 @@
   (.stroke ctx))
 
 (defn circle
-  [[x y] r ctx & {:keys [color] :or {color :black}}]
+  [[x y] r ctx &
+   {:keys [color width]
+    :or {color :black width 1.0}}]
+  (stroke-width width ctx)
   (.beginPath ctx)
   (.arc ctx x y r 0 (* 2 js/Math.PI) false)
   (fill-style color ctx)
@@ -66,7 +76,10 @@
 
 (defn rectangle
   "Draw a rectangle to the canvas."
-  [[x y w h] ctx & {:keys [color fill-color] :or {color :black fill-color nil}}]
+  [[x y w h] ctx &
+   {:keys [color fill-color width]
+    :or {color :black fill-color nil width 1.0}}]
+  (stroke-width width ctx)
   (when color
     (stroke-style color ctx)
     (.strokeRect ctx x y w h))
@@ -75,7 +88,10 @@
     (.fillRect ctx x y w h)))
 
 (defn polygon
-  [poly proj ctx & {:keys [color fill-color] :or {color :black fill-color nil}}]
+  [poly proj ctx
+   & {:keys [color fill-color width]
+      :or {color :black fill-color nil width 1.0}}]
+  (stroke-width width ctx)
   (.beginPath ctx)
   (when (seq poly)
     (let [p (first poly)
@@ -94,7 +110,10 @@
 (defn text
   "Draw text to the canvas."
   [text [x y] ctx & {:keys [fill-color size] :or {fill-color :black size 14}}]
-  (fill-style fill-color ctx)
-  (set! (.-font ctx) (str size "px monospace"))
+  (set! (.-font ctx) (str size "px sans"))
   (set! (.-textBaseline ctx) "top")
+  (stroke-width 3 ctx)
+  (stroke-style :white ctx)
+  (.strokeText ctx text x y)
+  (fill-style fill-color ctx)
   (.fillText ctx text x y))

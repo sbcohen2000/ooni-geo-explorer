@@ -11,7 +11,7 @@
   (cond
     (= k (:key tree)) (assoc tree :value v)   ;; replace value
 
-    (nil? tree) {:key k :value v}             ;; new node
+    (nil? tree) {:key k :value v :below 0}    ;; new node
 
     (< k (:key tree))                         ;; traverse left
     (assoc tree :left (add-point (:left tree) k v))
@@ -78,3 +78,34 @@
                 (points-in-range (:left tree) from to)))
         (into (when (and (:right tree) (> to mid))
                 (points-in-range (:right tree) from to))))))
+
+(def pos-inf js/Number.POSITIVE_INFINITY)
+(def neg-inf js/Number.NEGATIVE_INFINITY)
+
+(defn keys-in-range-coalescing
+  "Find the keys in the range [`from`, `to`], coalescing keys which are
+  closer than `size` into an interval.
+
+  Returns a list of keys/intervals."
+  [tree from to size]
+  (letfn [(f [node from to l r]
+            (let [mid (:key node)]
+              (cond
+                (< (- r l) size) [[:interval [l r]]]
+
+                :else
+                (-> (if (includes? from to mid) [[:key (:key node)]] [])
+                    (into (when (and (:left node) (< from mid))
+                            (f (:left node) from to l mid)))
+                    (into (when (and (:right node) (> to mid))
+                            (f (:right node) from to mid r)))))))]
+    (f tree from to neg-inf pos-inf)))
+
+(defn n-keys
+  "Find the number of keys in the tree."
+  [tree]
+  (+ 1
+     (when (:left tree)
+       (n-keys (:left tree)))
+     (when (:right tree)
+       (n-keys (:right tree)))))

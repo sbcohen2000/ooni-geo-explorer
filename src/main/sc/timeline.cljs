@@ -1,6 +1,7 @@
 (ns sc.timeline
-  (:require [sc.canvas]
-            [cljs.core.async :refer [put!]]))
+  (:require [cljs.core.async :refer [put!]]
+            [sc.canvas]
+            [sc.k1-tree :as k1]))
 
 (def ms-in-year  3.154e+10)
 (def ms-in-month 2.628e+9)
@@ -110,11 +111,19 @@
 
 (defn px-to-ms
   "Convert a value in pixels to milliseconds according to the current
-  source range.e"
+  source range."
   [state x]
   (let [[from to] (:src state)
         x-scale (/ (:w state) (- to from))]
     (js/Math.floor (+ (/ x x-scale) from))))
+
+(defn px-to-ms-relative
+  "Convert a value in pixels to relative milliseconds according to the
+  current source range."
+  [state x]
+  (let [[from to] (:src state)
+        x-scale (/ (:w state) (- to from))]
+    (js/Math.floor (/ x x-scale))))
 
 (defn ms-to-px
   "Convert a value from milliseconds to pixels according to the current
@@ -174,17 +183,42 @@
         ;; Use dt to calculate the offset needed to center each label
         ;; in the region.
         dx (ms-to-px-relative state dt)
-        height     (:h state)]
+        height (:h state)]
     (doseq [time scale]
      (let [x (ms-to-px state time)
            str (date-string (:src state) (+ time (/ dt 2)))]
        (sc.canvas/with-offset [(+ x (/ dx 2)) height] ctx
          (sc.canvas/with-rotation 0.8 ctx
            (sc.canvas/text str [0 0] ctx)))
-       (sc.canvas/line [x 0] [x height] ctx)))))
+       (sc.canvas/line [x 0] [x height] ctx :color :gray)))))
+
+(defn paint-data-points
+  [state data ctx]
+  (let [[from to] (:src state)
+        ;; We coalesce points which are closer than 4 px.
+        min-size (px-to-ms-relative state 4)
+        points (k1/keys-in-range-coalescing data from to min-size)
+        height (:h state)]
+    (doseq [[tag props] points]
+      (case tag
+        :key
+        (let [x (ms-to-px state props)]
+          (sc.canvas/line [x 0] [x height] ctx
+                          :color :palegreen
+                          :width 4))
+        :interval
+        (let [[from to] props
+              from-x (ms-to-px state from)
+              to-x   (ms-to-px state to)]
+          (sc.canvas/rectangle [from-x 0 (- to-x from-x) height] ctx
+                               :color :palegreen
+                               :fill-color :palegreen
+                               :width 4))))))
 
 (defn paint
-  "Paint the timeline to the canvas given its current state."
-  [state ctx]
-  (sc.canvas/rectangle (dst state) ctx :fill-color :white :color :red)
+  "Paint the timeline to the canvas given its current state and the
+  k1-tree representing the fetched OONI data."
+  [state data ctx]
+  (sc.canvas/rectangle (dst state) ctx :fill-color :ghostwhite :color nil)
+  (paint-data-points state data ctx)
   (paint-time-scale state ctx))

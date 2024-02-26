@@ -222,14 +222,15 @@
     (doseq [polygon geometry]
      (when (seq polygon)
        (let [outer-ring (first polygon)]
-         (sc.canvas/polygon outer-ring proj ctx))
+         (sc.canvas/polygon outer-ring proj ctx :fill-color :linen))
        (doseq [hole (rest polygon)]
-         (sc.canvas/polygon hole proj ctx))))))
+         (sc.canvas/polygon hole proj ctx :fill-color :linen))))))
 
 (defn draw-visible-ccs
   "Draw the entire visible map"
   [state ctx]
   (sc.canvas/clear ctx)
+  (sc.canvas/rectangle (dst state) ctx :fill-color :lightskyblue :color nil)
   (doseq [cc (:visible-ccs state)]
     (draw-geometry
      (:geometry (cc @geo-data))

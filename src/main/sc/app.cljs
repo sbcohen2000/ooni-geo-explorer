@@ -1,8 +1,9 @@
 (ns sc.app
   (:require
-   [cljs.core.async :refer [chan put! go-loop <!]]
+   [cljs.core.async :refer [chan put! go go-loop <!]]
    [clojure.string :as str]
    [sc.canvas]
+   [sc.k1-tree :as k1]
    [sc.map]
    [sc.network]
    [sc.rect]
@@ -23,7 +24,7 @@
   (.addEventListener js/window "resize" on-resize)
   (on-resize))
 
-;;;; == Dragging / Clicking ==================================================w
+;;;; == Dragging / Clicking ==================================================
 
 ;; internal use only, clients should;; only read event-stream
 (defonce drag-state (atom nil))
@@ -133,7 +134,7 @@
   (sc.canvas/with-offset [0 tlh] (:ctx state)
     (sc.map/paint (:map state) (:ctx state)))
   (sc.canvas/with-offset [0 0] (:ctx state)
-    (sc.timeline/paint (:timeline state) (:ctx state))))
+    (sc.timeline/paint (:timeline state) (:data state) (:ctx state))))
 
 (defn widget-under-point
   "Return a symbol (either :map or :timeline) indicating the widget
@@ -144,6 +145,19 @@
     (sc.rect/includes? (:timeline-rect state) p) :timeline
     :else nil))
 
+(defn to-UTC-string
+  [ms]
+  (let [iso (.toISOString
+             (new js/Date (.toUTCString (new js/Date ms))))]
+    ;; Cut off the timezone marker, ".000Z", which is meaningless now
+    ;; since we're in UTC. Also, the OONI API cannot parse the
+    ;; timezone.
+    (subs iso 0 (- (count iso) 5))))
+
+(defn to-local-timestamp
+  [s]
+  (.getTime (new js/Date s)))
+
 (defn handle-clock
   [state]
   (let [map-state      (:map state)
@@ -153,8 +167,8 @@
              (> (- now (:last-interaction state)) 3000))
       (let [ccs               (:visible-ccs map-state)
             [begin-ms end-ms] (:src timeline-state)
-            begin-stamp       (.toISOString (new js/Date begin-ms))
-            end-stamp         (.toISOString (new js/Date end-ms))
+            begin-stamp       (to-UTC-string begin-ms)
+            end-stamp         (to-UTC-string end-ms)
             query-parameters
             {"since"      begin-stamp
              "until"      end-stamp
@@ -164,13 +178,26 @@
              "test_name"  "web_connectivity"
              "probe_cc"   (str/join "," (map name ccs))}
             url (str
-                 "api.ooni.io/aggregation"
+                 "https://api.ooni.io/api/v1/aggregation"
                  (sc.network/query-string query-parameters))]
-        (println "do request!" url)
+        (js/console.log "requesting:" url)
+        (go
+          (let [res (<! (sc.network/fetch-json url))]
+            (put! event-stream [:network-response res])))
         (assoc state :dirty false))
       state)))
 
-(def u "api.ooni.io/aggregation?since=2024-02-09T16:32:15.622Z&until=2024-02-24T21:32:15.622Z&time_grain=auto&axis_x=measurement_start_day&axis_y=probe_cc&test_name=web_connectivity&probe_cc=SA,LU,ID,CM,PT,LK,IR,KW,IL,QA,BE,SK,IT,CY,BJ,GB,PS,HR,DK,LA,AR,SZ,EH,PR,IQ,SE,UZ,IN,GL,LR,UG,AF,AE,JO,GQ,CO,MG,TZ,KH,ZW,AL,LY,OM,CA,MA,PY,IS,LB,ME,DJ,KE,LV,SI,MD,RO,SO,BO,VE,VN,CF,CN,BA,RS,BI,XK,SR,RU,MK,CI,NL,FJ,TH,ZM,SN,BF,TD,SS,GW,ER,NG,GM,BR,BT,BW,EE,MN,TR,LT,TM,IE,ES,ZA,MZ,CG,AT,SL,SD,GE,TJ,RW,TN,BG,NO,GH,PK,GR,AZ,YE,MR,AO,SY,MY,FR,TT,ML,NP,BD,PL,FI,BY,CH,EG,ET,MW,NE,MM,DZ,CZ,KZ,HU,KG,GY,NA,UA,AM,GN,DE,GA,TG,CD")
+(defn handle-network-response
+  [state res]
+  (let [f (fn [m meas]
+            (update m (to-local-timestamp (:measurement_start_day meas))
+                    #(conj % meas)))
+        by-day (reduce f {} (:result res))]
+    (js/console.log by-day)
+    (update state :data
+            #(let [tree' (k1/add-points % (seq by-day))]
+               (println "tree size:" (k1/n-keys tree'))
+               tree'))))
 
 (defn handler
   "Handle events."
@@ -184,7 +211,8 @@
              :timeline-rect    [0 0 (sc.canvas/width ctx) tlh]
              :captured-widget  nil
              :last-interaction (js/Date.now)
-             :dirty            true})
+             :dirty            true
+             :data             (k1/k1-tree)})
     :resize (let [[w' h'] (sc.canvas/resize-canvas (:ctx state))]
               (-> state
                   (assoc  :timeline-rect [0 0 w' tlh])
@@ -195,6 +223,9 @@
     :invalidate (assoc state
                        :last-interaction (js/Date.now)
                        :dirty true)
+    :network-response (do
+                        (js/console.log "network response:" props)
+                        (handle-network-response state props))
 
     (let [state'
           (case tag
