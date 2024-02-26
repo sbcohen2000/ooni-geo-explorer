@@ -41,8 +41,8 @@
           d-b (abs (- (:key b) k))]
       (if (< d-a d-b) a b))))
 
-(defn nearest-point
-  "Find the point in the tree which is nearest to `k`."
+(defn- nearest
+  "Find the nearest node to `k`."
   [tree k]
   (letfn [(f [node best]
             (if (leaf? node)
@@ -61,7 +61,17 @@
                   ;; plane, so we have to check the other branch too.
                   (f (opposite-side node) best'')
                   best''))))]
-    (:value (f tree nil))))
+    (f tree nil)))
+
+(defn nearest-key
+  "Find the key in the tree which is nearest to `k`."
+  [tree k]
+  (:key (nearest tree k)))
+
+(defn nearest-value
+  "Find the value in the tree which is nearest to `k`."
+  [tree k]
+  (:value (nearest tree k)))
 
 (defn- includes?
   "Check if the input point `x` is included in the interval given

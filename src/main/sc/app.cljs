@@ -52,9 +52,9 @@
 
 (defonce on-pointer-move
   (fn [ev]
-      (when @drag-state
-        (let [x (.. ev -offsetX)
-              y (.. ev -offsetY)]
+    (let [x (.. ev -offsetX)
+          y (.. ev -offsetY)]
+      (if @drag-state
           ;; If the distance from the initial start point is
           ;; greater than some threshold, emit drag events.
           (when (> (v/distance (:initial @drag-state) [x y]) 3)
@@ -65,7 +65,8 @@
               (put! event-stream [:drag (assoc @drag-state :p [x y])])
               (do
                 (swap! drag-state #(assoc % :started true))
-                (put! event-stream [:drag-start (assoc @drag-state :p [x y])]))))))))
+                (put! event-stream [:drag-start (assoc @drag-state :p [x y])]))))
+          (put! event-stream [:pointer-move {:p [x y]}])))))
 
 (defonce on-touch-start
   (fn [ev] (.preventDefault ev)))
@@ -122,7 +123,8 @@
   (go-loop []
     (let [ev (<! event-stream)
           state' (handler @app-state ev)]
-      (repaint state')
+      (when-not (= state' @app-state)
+        (repaint state'))
       (reset! app-state state')
       (recur))))
 
@@ -131,10 +133,12 @@
 (defn repaint
   "Repaint the app state."
   [state]
-  (sc.canvas/with-offset [0 tlh] (:ctx state)
-    (sc.map/paint (:map state) (:ctx state)))
-  (sc.canvas/with-offset [0 0] (:ctx state)
-    (sc.timeline/paint (:timeline state) (:data state) (:ctx state))))
+  (let [selected-timestamp (get-in state [:timeline :selected-key])
+        selected-datapoint (k1/nearest-value (:data state) selected-timestamp)]
+    (sc.canvas/with-offset [0 tlh] (:ctx state)
+      (sc.map/paint (:map state) selected-datapoint (:ctx state)))
+    (sc.canvas/with-offset [0 0] (:ctx state)
+      (sc.timeline/paint (:timeline state) (:ctx state)))))
 
 (defn widget-under-point
   "Return a symbol (either :map or :timeline) indicating the widget
@@ -192,12 +196,13 @@
   (let [f (fn [m meas]
             (update m (to-local-timestamp (:measurement_start_day meas))
                     #(conj % meas)))
-        by-day (reduce f {} (:result res))]
-    (js/console.log by-day)
-    (update state :data
-            #(let [tree' (k1/add-points % (seq by-day))]
-               (println "tree size:" (k1/n-keys tree'))
-               tree'))))
+        by-day (reduce f {} (:result res))
+        data' (k1/add-points (:data state) (seq by-day))]
+    (js/console.log "by-day:" by-day)
+    (js/console.log "tree size:" (k1/n-keys data'))
+    (-> state
+        (assoc :data data')
+        (update :timeline #(sc.timeline/set-data % data')))))
 
 (defn handler
   "Handle events."
@@ -213,19 +218,28 @@
              :last-interaction (js/Date.now)
              :dirty            true
              :data             (k1/k1-tree)})
+
     :resize (let [[w' h'] (sc.canvas/resize-canvas (:ctx state))]
               (-> state
                   (assoc  :timeline-rect [0 0 w' tlh])
                   (update :timeline #(sc.timeline/handler % [:resize {:w w' :h tlh}]))
                   (assoc  :map-rect [0 tlh w' (- h' tlh)])
                   (update :map #(sc.map/handler % [:resize {:w w' :h (- h' tlh)}]))))
+
     :clock (handle-clock state)
+
     :invalidate (assoc state
                        :last-interaction (js/Date.now)
                        :dirty true)
+
     :network-response (do
                         (js/console.log "network response:" props)
                         (handle-network-response state props))
+
+    :repaint (let [[tag f] props]
+               (case tag
+                 :map (update state :map f)
+                 :timeline (update state :timeline f)))
 
     (let [state'
           (case tag

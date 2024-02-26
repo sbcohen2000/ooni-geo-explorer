@@ -11,11 +11,18 @@
 (defn model
   "Return the initial state of the timeline."
   [event-stream]
-  {:w                0
-   :h                0
-   :src              [(- (js/Date.now) (* 0.5 ms-in-month)) (js/Date.now)]
-   :drag-offset      nil
-   :event-stream     event-stream})
+  {:w            0
+   :h            0
+   :src          [(- (js/Date.now) (* 0.5 ms-in-month)) (js/Date.now)]
+   :drag-offset  nil
+   :event-stream event-stream
+   :selected-key nil
+   :data         (k1/k1-tree)})
+
+(defn set-data
+  "Set the data tree in the model."
+  [state data]
+  (assoc state :data data))
 
 (defn invalidate!
   [state]
@@ -175,6 +182,22 @@
           x     (px-to-ms state (first (:p props)))]
       (update-src-if-valid state #(zoom % x scale)))
 
+    :click
+    (let [[x _] (:p props)
+          ms (px-to-ms state x)
+          selected-key (k1/nearest-key (:data state) ms)]
+      (if (= selected-key (:selected-key state))
+        state
+        (assoc state :selected-key selected-key)))
+
+    :pointer-move
+    (let [[x _] (:p props)
+          ms (px-to-ms state x)
+          selected-key (k1/nearest-key (:data state) ms)]
+      (if (= selected-key (:selected-key state))
+        state
+        (assoc state :selected-key selected-key)))
+
     state))
 
 (defn paint-time-scale
@@ -192,33 +215,43 @@
            (sc.canvas/text str [0 0] ctx)))
        (sc.canvas/line [x 0] [x height] ctx :color :gray)))))
 
+(defn- includes?
+  "Check if the input point `x` is included in the interval given
+  by [`from`, `to`]."
+  [from to x]
+  (and (>= x from) (<= x to)))
+
 (defn paint-data-points
-  [state data ctx]
-  (let [[from to] (:src state)
+  [state ctx]
+  (let [data         (:data state)
+        [from to]    (:src state)
         ;; We coalesce points which are closer than 4 px.
-        min-size (px-to-ms-relative state 4)
-        points (k1/keys-in-range-coalescing data from to min-size)
-        height (:h state)]
+        min-size     (px-to-ms-relative state 4)
+        points       (k1/keys-in-range-coalescing data from to min-size)
+        height       (:h state)
+        selected-key (:selected-key state)]
     (doseq [[tag props] points]
-      (case tag
-        :key
-        (let [x (ms-to-px state props)]
-          (sc.canvas/line [x 0] [x height] ctx
-                          :color :palegreen
-                          :width 4))
-        :interval
-        (let [[from to] props
-              from-x (ms-to-px state from)
-              to-x   (ms-to-px state to)]
-          (sc.canvas/rectangle [from-x 0 (- to-x from-x) height] ctx
-                               :color :palegreen
-                               :fill-color :palegreen
-                               :width 4))))))
+     (case tag
+       :key
+       (let [x             (ms-to-px state props)
+             [color width] (if (= props selected-key)
+                             [:orange 6] [:palegreen 4])]
+         (sc.canvas/line [x 0] [x height] ctx :color color :width width))
+       :interval
+       (let [[from to] props
+             from-x    (ms-to-px state from)
+             to-x      (ms-to-px state to)
+             color     (if (includes? from to selected-key)
+                         :orange :palegreen)]
+         (sc.canvas/rectangle [from-x 0 (- to-x from-x) height] ctx
+                              :color color
+                              :fill-color color
+                              :width 4))))))
 
 (defn paint
   "Paint the timeline to the canvas given its current state and the
   k1-tree representing the fetched OONI data."
-  [state data ctx]
+  [state ctx]
   (sc.canvas/rectangle (dst state) ctx :fill-color :ghostwhite :color nil)
-  (paint-data-points state data ctx)
+  (paint-data-points state ctx)
   (paint-time-scale state ctx))

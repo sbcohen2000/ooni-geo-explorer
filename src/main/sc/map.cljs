@@ -5,8 +5,6 @@
             [sc.rect]
             [sc.vector2 :as v]))
 
-(defonce geo-data (atom nil))
-
 (def pi js/Math.PI)
 (def tau (* 2 js/Math.PI))
 (def pi-4 (/ pi 4))
@@ -118,20 +116,21 @@
 (defn model
   "Return the initial state of the map."
   [event-stream]
-  (when-not @geo-data
-    (go
-      (let [data (->> (<! (sc.network/fetch-json "./geo-data.json"))
-                      (map (fn [[cc v]]
-                             [cc (update v :geometry project-geometry)]))
-                      (map (fn [[cc v]]
-                             [cc (assoc v :bbox (geometry-bbox (:geometry v)))])))]
-        (println "Loaded geo data!")
-        (reset! geo-data (into {} data)))))
+  (go
+    (let [data (->> (<! (sc.network/fetch-json "./geo-data.json"))
+                    (map (fn [[cc v]]
+                           [cc (update v :geometry project-geometry)]))
+                    (map (fn [[cc v]]
+                           [cc (assoc v :bbox (geometry-bbox (:geometry v)))]))
+                    (#(into {} %)))]
+      (println "Loaded geo data!" data)
+      (put! event-stream [:repaint [:map #(assoc % :geo-data data :visible-ccs (set (keys data)))]])))
   {:src              [min-lon min-lat (- max-lon min-lon) (- max-lat min-lat)] ;; in degrees
    :drag-offset      nil ;; in degrees
    :w                0
    :h                0
    :visible-ccs      #{}
+   :geo-data         nil
    :event-stream     event-stream})
 
 (defn invalidate!
@@ -160,8 +159,8 @@
   (let [rect (:src state)]
     (set (filter #(sc.rect/intersection?
                    rect
-                   (:bbox (% @geo-data)))
-                 (keys @geo-data)))))
+                   (:bbox (% (:geo-data state))))
+                 (keys (:geo-data state))))))
 
 (defn update-src-if-valid
   "Update the source rect with the given function, ensuring that the src
@@ -187,11 +186,6 @@
     :resize (-> state
                 (assoc :w (:w props) :h (:h props))
                 (update-src-if-valid #(ensure-aspect % (/ (:h props) (:w props)))))
-
-    :click (let [dst [0 0 (:w state) (:h state)]
-                 proj (px-to-degrees (:src state) dst)]
-             (println (proj (:p props)))
-             state)
 
     :drag-start
     (assoc state :drag-offset (sc.rect/upper-left (:src state)))
@@ -233,12 +227,15 @@
   (sc.canvas/rectangle (dst state) ctx :fill-color :lightskyblue :color nil)
   (doseq [cc (:visible-ccs state)]
     (draw-geometry
-     (:geometry (cc @geo-data))
+     (:geometry (cc (:geo-data state)))
      (:src state)
      (dst state)
      ctx)))
 
 (defn paint
-  "Paint the map to the canvas given its state."
-  [state ctx]
+  "Paint the map to the canvas given its state and
+  a datapoint."
+  [state data ctx]
+  (when data
+    (println data))
   (draw-visible-ccs state ctx))
