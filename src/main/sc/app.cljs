@@ -1,6 +1,7 @@
 (ns sc.app
   (:require
    [cljs.core.async :refer [chan put! go-loop <!]]
+   [clojure.string :as str]
    [sc.canvas]
    [sc.map]
    [sc.network]
@@ -145,15 +146,31 @@
 
 (defn handle-clock
   [state]
-  (let [map      (:map state)
-        timeline (:timeline state)
-        now      (js/Date.now)]
+  (let [map-state      (:map state)
+        timeline-state (:timeline state)
+        now            (js/Date.now)]
     (if (and (:dirty state)
              (> (- now (:last-interaction state)) 3000))
-      (do
-       (println "do request!")
-       (assoc state :dirty false))
+      (let [ccs               (:visible-ccs map-state)
+            [begin-ms end-ms] (:src timeline-state)
+            begin-stamp       (.toISOString (new js/Date begin-ms))
+            end-stamp         (.toISOString (new js/Date end-ms))
+            query-parameters
+            {"since"      begin-stamp
+             "until"      end-stamp
+             "time_grain" "auto"
+             "axis_x"     "measurement_start_day"
+             "axis_y"     "probe_cc"
+             "test_name"  "web_connectivity"
+             "probe_cc"   (str/join "," (map name ccs))}
+            url (str
+                 "api.ooni.io/aggregation"
+                 (sc.network/query-string query-parameters))]
+        (println "do request!" url)
+        (assoc state :dirty false))
       state)))
+
+(def u "api.ooni.io/aggregation?since=2024-02-09T16:32:15.622Z&until=2024-02-24T21:32:15.622Z&time_grain=auto&axis_x=measurement_start_day&axis_y=probe_cc&test_name=web_connectivity&probe_cc=SA,LU,ID,CM,PT,LK,IR,KW,IL,QA,BE,SK,IT,CY,BJ,GB,PS,HR,DK,LA,AR,SZ,EH,PR,IQ,SE,UZ,IN,GL,LR,UG,AF,AE,JO,GQ,CO,MG,TZ,KH,ZW,AL,LY,OM,CA,MA,PY,IS,LB,ME,DJ,KE,LV,SI,MD,RO,SO,BO,VE,VN,CF,CN,BA,RS,BI,XK,SR,RU,MK,CI,NL,FJ,TH,ZM,SN,BF,TD,SS,GW,ER,NG,GM,BR,BT,BW,EE,MN,TR,LT,TM,IE,ES,ZA,MZ,CG,AT,SL,SD,GE,TJ,RW,TN,BG,NO,GH,PK,GR,AZ,YE,MR,AO,SY,MY,FR,TT,ML,NP,BD,PL,FI,BY,CH,EG,ET,MW,NE,MM,DZ,CZ,KZ,HU,KG,GY,NA,UA,AM,GN,DE,GA,TG,CD")
 
 (defn handler
   "Handle events."
