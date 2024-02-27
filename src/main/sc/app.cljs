@@ -247,8 +247,6 @@
     (do (set-modal-display! "settings-pane" true)
         state)
 
-    "about-button" state
-
     "settings-apply-button"
     (do (set-modal-display! "settings-pane" false)
         (let [settings' (read-settings)]
@@ -264,6 +262,14 @@
     "settings-close-button"
     (do (set-modal-display! "settings-pane" false)
         (reset-settings! (:settings state))
+        state)
+
+    "about-button"
+    (do (set-modal-display! "about-pane" true)
+        state)
+
+    "about-close-button"
+    (do (set-modal-display! "about-pane" false)
         state)
 
     state))

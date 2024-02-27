@@ -20,6 +20,52 @@
         About
       </div>
     </div>
+    <div class="modal" id="about-pane">
+      <div class="modal-content">
+        <h1>About</h1>
+        <p>
+          OONI Geo Explorer is a visualization of
+          the <a href="https://explorer.ooni.org/">OONI</a>
+          Measurement Aggregate Toolkit (MAT) API.
+        </p>
+        <p>
+          The Geo Explorer is meant to provide an alternate
+          interactive interface for the geospatial and temporal axes
+          of OONI's data, providing a high-level and intuitive
+          mechanism for exploring the dataset. On the top of the
+          screen, a timeline shows the current range of dates for
+          which data is shown.  The map view shows a pie chart for
+          each country which includes data in the specified time
+          range. Datapoints are marked with a green line. To view a
+          specific measurement, mouse over the timeline and the
+          selected datapoint will turn orange. The colors used in the
+          pie charts are the same as in OONI Explorer:
+        </p>
+        <ul>
+          <li><b style="color: seagreen">Green</b>: OK (no sign of internet censorship)</li>
+          <li><b style="color: darkorange">Yellow</b>: Shows signs of potential blocking, but false positives can occur</li>
+          <li><b style="color: crimson">Red</b>: Measurements from confirmed blocked websites</li>
+          <li><b style="color: gray">Gray</b>: Failed measurements that should be discarded</li>
+        </ul>
+        <p>
+          Anytime the view is panned, or the timeline is changed,
+          the app dispatches a request to the OONI API to retrieve
+          relevant data for the selected time and location. By
+          default, web connectivity data from all domains is shown,
+          you can see data for one or more specific domains by
+          adjusting the settings in the "settings" pane.
+        </p>
+        <p>
+          Created by <a href="https://www.sbcohen.net">Sam Cohen</a>.
+        </p>
+
+        <div class="close-buttons-pane">
+          <div class="button" id="about-close-button">
+            Close
+          </div>
+        </div>
+      </div>
+    </div>
     <div class="modal" id="settings-pane">
       <div class="modal-content">
         <h1>Settings</h1>
@@ -35,7 +81,7 @@
           Set the relative size of the web-connectivity pie charts.
           <input id="pie-size-input" type="range" min="10" max="100" value="50"></input>
         </div>
-        <div id="close-settings-buttons-pane">
+        <div class="close-buttons-pane">
           <div>
             <div class="button" id="settings-apply-button">
               Apply
@@ -68,7 +114,7 @@
           position: absolute;
           right: 0;
       }
-      #close-settings-buttons-pane {
+      .close-buttons-pane {
           align-self: flex-end;
           display: flex;
           flex-direction: column;
@@ -105,6 +151,10 @@
           overflow: auto;
           row-gap: 20px;
           width: calc(100% - 20px);
+      }
+      .modal-content p {
+          margin: 10px;
+          max-width: 700px;
       }
       .setting {
           border-left: 4px solid gray;
