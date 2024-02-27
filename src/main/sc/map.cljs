@@ -276,7 +276,8 @@
 (defn draw-pies
   "Draw pie charts from the current datapoint."
   [state data ctx]
-  (let [proj (degrees-to-px (:src state) (dst state))]
+  (let [proj (degrees-to-px (:src state) (dst state))
+        max-total (apply max (map :measurement_count data))]
     (doseq [elem data]
       (let [cc (keyword (:probe_cc elem))
             geo-data  (cc (:geo-data state))
@@ -287,8 +288,10 @@
             p-anomaly   (/ (:anomaly_count   elem) total)
             p-confirmed (/ (:confirmed_count elem) total)
             p-failure   (/ (:failure_count   elem) total)
-            p-ok        (/ (:ok_count        elem) total)]
-        (draw-pie center-px (max (min (/ total 100) 50) 5) ctx
+            p-ok        (/ (:ok_count        elem) total)
+            p-total     (/ total max-total)
+            r           (max (min (* (js/Math.sqrt p-total) 50) 300) 5)]
+        (draw-pie center-px r ctx
                   [p-ok        :seagreen]
                   [p-anomaly   :darkorange]
                   [p-confirmed :crimson]

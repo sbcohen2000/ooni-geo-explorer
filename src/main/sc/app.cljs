@@ -180,6 +180,7 @@
              "axis_x"     "measurement_start_day"
              "axis_y"     "probe_cc"
              "test_name"  "web_connectivity"
+             ;; "domain"     "wikipedia.org"
              "probe_cc"   (str/join "," (map name ccs))}
             url (str
                  "https://api.ooni.io/api/v1/aggregation"
