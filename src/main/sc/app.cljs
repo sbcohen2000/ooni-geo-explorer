@@ -114,23 +114,38 @@
     (reset! interval-id nil))
   (reset! interval-id (js/setInterval on-clock 1000)))
 
+;;;; == Buttons ==============================================================
+
+(defn button-handler
+  [ev]
+  (let [button-id (.. ev -target -id)]
+    (put! event-stream [:button-click button-id])))
+
+(defn setup-button-handler
+  []
+  (let [buttons (.getElementsByClassName js/document "button")]
+    (doseq [button buttons]
+      (set! (.-onclick button) button-handler))))
+
+;;;; == Event Loop ===========================================================
+
 (defonce app-state (atom {}))
 
 (declare handler)
-(declare repaint)
+(declare repaint!)
 
 (defonce event-loop
   (go-loop []
     (let [ev (<! event-stream)
           state' (handler @app-state ev)]
       (when-not (= state' @app-state)
-        (repaint state'))
+        (repaint! state'))
       (reset! app-state state')
       (recur))))
 
 (def tlh 50)
 
-(defn repaint
+(defn repaint!
   "Repaint the app state."
   [state]
   (let [selected-timestamp (get-in state [:timeline :selected-key])
@@ -174,14 +189,15 @@
             begin-stamp       (to-UTC-string begin-ms)
             end-stamp         (to-UTC-string end-ms)
             query-parameters
-            {"since"      begin-stamp
-             "until"      end-stamp
-             "time_grain" "auto"
-             "axis_x"     "measurement_start_day"
-             "axis_y"     "probe_cc"
-             "test_name"  "web_connectivity"
-             ;; "domain"     "wikipedia.org"
-             "probe_cc"   (str/join "," (map name ccs))}
+            (-> {"since"      begin-stamp
+                 "until"      end-stamp
+                 "time_grain" "auto"
+                 "axis_x"     "measurement_start_day"
+                 "axis_y"     "probe_cc"
+                 "test_name"  "web_connectivity"
+                 "probe_cc"   (str/join "," (map name ccs))}
+                (#(if-let [domain (get-in state [:settings :domain])]
+                    (assoc % "domain" domain) %)))
             url (str
                  "https://api.ooni.io/api/v1/aggregation"
                  (sc.network/query-string query-parameters))]
@@ -205,6 +221,53 @@
         (assoc :data data')
         (update :timeline #(sc.timeline/set-data % data')))))
 
+(defn read-settings
+  "Read the settings from the settings pane."
+  []
+  (let [domain   (.-value (.getElementById js/document "domain-input"))
+        pie-size (.-value (.getElementById js/document "pie-size-input"))]
+    {:domain (if (empty? domain) nil domain)
+     :pie-size pie-size}))
+
+(defn reset-settings!
+  "Reset the settings in the settings pane to the given `settings`."
+  [settings]
+  (set! (.-value (.getElementById js/document "domain-input")) (:domain settings))
+  (set! (.-value (.getElementById js/document "pie-size-input")) (:pie-size settings)))
+
+(defn set-modal-display!
+  [id display?]
+  (let [modal (.getElementById js/document id)]
+      (set! (.. modal -style -display) (if display? "block" "none"))))
+
+(defn handle-button
+  [state button-id]
+  (case button-id
+    "settings-button"
+    (do (set-modal-display! "settings-pane" true)
+        state)
+
+    "about-button" state
+
+    "settings-apply-button"
+    (do (set-modal-display! "settings-pane" false)
+        (let [settings' (read-settings)]
+          (println (:settings state) settings')
+          (-> state
+              (#(if (= (get-in % [:settings :domain]) (:domain settings'))
+                  (assoc % :settings settings')
+                  ;; If the domain has changed, we need to clear the
+                  ;; current database and request new data.
+                  (assoc % :settings settings' :dirty true :data (k1/k1-tree))))
+              (assoc-in [:map :pie-size] (:pie-size settings')))))
+
+    "settings-close-button"
+    (do (set-modal-display! "settings-pane" false)
+        (reset-settings! (:settings state))
+        state)
+
+    state))
+
 (defn handler
   "Handle events."
   [state [tag props :as ev]]
@@ -218,7 +281,8 @@
              :captured-widget  nil
              :last-interaction (js/Date.now)
              :dirty            true
-             :data             (k1/k1-tree)})
+             :data             (k1/k1-tree)
+             :settings         (read-settings)})
 
     :resize (let [[w' h'] (sc.canvas/resize-canvas (:ctx state))]
               (-> state
@@ -241,6 +305,8 @@
                (case tag
                  :map (update state :map f)
                  :timeline (update state :timeline f)))
+
+    :button-click (handle-button state props)
 
     (let [state'
           (case tag
@@ -272,9 +338,10 @@
   (setup-pointer-capture-handler)
   (setup-wheel-handler)
   (setup-clock)
+  (setup-button-handler)
   (println "init!"))
 
 (defn reload!
   []
-  (repaint @app-state)
+  (repaint! @app-state)
   (println "reload!"))

@@ -12,13 +12,111 @@
       height="400"
       id="canvas">
     </canvas>
+    <div id="buttons-pane">
+      <div class="button" id="settings-button">
+        Settings
+      </div>
+      <div class="button" id="about-button">
+        About
+      </div>
+    </div>
+    <div class="modal" id="settings-pane">
+      <div class="modal-content">
+        <h1>Settings</h1>
+        <div class="setting">
+          <b>Domain</b>
+          Limit the visualization to show results for particular
+          domains. Input a comma-separated list of domains to display,
+          or leave the field blank to show data for all domains.
+          <input id="domain-input" type="text"></input>
+        </div>
+        <div class="setting">
+          <b>Pie Chart Size</b>
+          Set the relative size of the web-connectivity pie charts.
+          <input id="pie-size-input" type="range" min="10" max="100" value="50"></input>
+        </div>
+        <div id="close-settings-buttons-pane">
+          <div>
+            <div class="button" id="settings-apply-button">
+              Apply
+            </div>
+            <div class="button" id="settings-close-button">
+              Close
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
     <style>
+      body {
+          font-family: sans;
+      }
+      h1 {
+          font-size: 1.5em;
+          margin-left: 10px;
+      }
       #canvas {
-          position: absolute;
-          top: 0;
           left: 0;
           margin: 0;
           padding: 0;
+          position: absolute;
+          top: 0;
+      }
+      #buttons-pane {
+          bottom: 0;
+          margin: 2px;
+          position: absolute;
+          right: 0;
+      }
+      #close-settings-buttons-pane {
+          align-self: flex-end;
+          display: flex;
+          flex-direction: column;
+          flex-grow: 1;
+          justify-content: flex-end;
+          margin: 10px;
+      }
+      .button {
+          background-color: gray;
+          border-radius: 2px;
+          color: white;
+          cursor: pointer;
+          display: inline-block;
+          padding: 4px;
+      }
+      .modal {
+          display: none;
+          backdrop-filter: blur(4px);
+          height: 100%;
+          left: 0;
+          position: absolute;
+          top: 0;
+          width: 100%;
+      }
+      .modal-content {
+          background-color: white;
+          border-radius: 2px;
+          box-shadow: 0 0 10px gray;
+          display: flex;
+          flex-direction: column;
+          height: calc(100% - 20px);
+          justify-content: flex-start;
+          margin: 10px;
+          overflow: auto;
+          row-gap: 20px;
+          width: calc(100% - 20px);
+      }
+      .setting {
+          border-left: 4px solid gray;
+          color: #333;
+          display: flex;
+          flex-direction: column;
+          margin-right: 10px;
+          max-width: 700px;
+          padding-left: calc(10px - 4px);
+      }
+      .setting input {
+          max-width: 400px;
       }
     </style>
   </body>

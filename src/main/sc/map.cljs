@@ -136,7 +136,8 @@
    :h                0
    :visible-ccs      #{}
    :geo-data         nil
-   :event-stream     event-stream})
+   :event-stream     event-stream
+   :pie-size         50})
 
 (defn invalidate!
   [state]
@@ -290,7 +291,7 @@
             p-failure   (/ (:failure_count   elem) total)
             p-ok        (/ (:ok_count        elem) total)
             p-total     (/ total max-total)
-            r           (max (min (* (js/Math.sqrt p-total) 50) 300) 5)]
+            r           (max (min (* (js/Math.sqrt p-total) (:pie-size state)) 300) 5)]
         (draw-pie center-px r ctx
                   [p-ok        :seagreen]
                   [p-anomaly   :darkorange]
@@ -298,8 +299,7 @@
                   [p-failure   :gray])))))
 
 (defn paint
-  "Paint the map to the canvas given its state and
-  a datapoint."
+  "Paint the map to the canvas given its state and a datapoint."
   [state data ctx]
   (draw-visible-ccs state ctx)
   (draw-visible-country-labels state ctx)
