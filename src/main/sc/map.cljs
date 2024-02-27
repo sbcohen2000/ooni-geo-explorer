@@ -72,14 +72,19 @@
 (def pos-inf js/Number.POSITIVE_INFINITY)
 (def neg-inf js/Number.NEGATIVE_INFINITY)
 
-(defn geometry-bbox
-  [geometry]
-  (let [all-points (mapcat (fn [ring] (mapcat concat ring)) geometry)
+(defn polygon-bbox
+  "Calculate the bounding box of a polygon."
+  [points]
+  (let [all-points (mapcat concat points)
         bounds (reduce
                 (fn [[l t r b] [x y]]
                   [(min x l) (min y t) (max x r) (max y b)])
                 [pos-inf pos-inf neg-inf neg-inf] all-points)]
     (apply sc.rect/from-bounds bounds)))
+
+(defn geometry-bbox
+  [geometry]
+  (apply max-key sc.rect/area (map polygon-bbox geometry)))
 
 (defn ensure-aspect
   "Ensure that the input rectangle has the given aspect ratio."
@@ -123,7 +128,7 @@
                     (map (fn [[cc v]]
                            [cc (assoc v :bbox (geometry-bbox (:geometry v)))]))
                     (#(into {} %)))]
-      (println "Loaded geo data!" data)
+      (println "Loaded geo data!")
       (put! event-stream [:repaint [:map #(assoc % :geo-data data :visible-ccs (set (keys data)))]])))
   {:src              [min-lon min-lat (- max-lon min-lon) (- max-lat min-lat)] ;; in degrees
    :drag-offset      nil ;; in degrees
@@ -220,22 +225,80 @@
        (doseq [hole (rest polygon)]
          (sc.canvas/polygon hole proj ctx :fill-color :linen))))))
 
+(defn draw-visible-country-labels
+  "Draw country labels for the entire visible map."
+  [state ctx]
+  (let [proj    (degrees-to-px (:src state) (dst state))
+        h-scale (/ (sc.rect/width (dst state)) (sc.rect/width (:src state)))]
+    (doseq [cc (:visible-ccs state)]
+      (let [data (cc (:geo-data state))
+            full-name-width (sc.canvas/text-width (:country_name data) ctx)
+            cc-name-width   (sc.canvas/text-width (name cc) ctx)
+            bbox-width      (sc.rect/width  (:bbox data))
+            bbox-width-px   (* bbox-width h-scale)
+            center          (sc.rect/center (:bbox data))
+            center-px       (proj center)]
+        (cond
+          (< full-name-width bbox-width-px)
+          (sc.canvas/text (:country_name data) center-px ctx :align :center)
+
+          (< cc-name-width bbox-width-px)
+          (sc.canvas/text (name cc) center-px ctx :align :center)
+
+          :else
+          nil)))))
+
 (defn draw-visible-ccs
   "Draw the entire visible map"
   [state ctx]
   (sc.canvas/clear ctx)
   (sc.canvas/rectangle (dst state) ctx :fill-color :lightskyblue :color nil)
   (doseq [cc (:visible-ccs state)]
-    (draw-geometry
-     (:geometry (cc (:geo-data state)))
-     (:src state)
-     (dst state)
-     ctx)))
+    (let [data (cc (:geo-data state))]
+      (draw-geometry
+       (:geometry data)
+       (:src state)
+       (dst state)
+       ctx))))
+
+(defn draw-pie
+  "Draw a pie chart centered at `center` and with radius `r`,
+  with the probabilities `ps`. `ps` is a list of tuples,
+  [probability, color], and the probabilities in `ps` are assumed to
+  sum to 1."
+  [center r ctx & ps]
+  (reduce (fn [s [p color]]
+            (sc.canvas/arc center r s (+ s (* p tau)) ctx
+                           :fill-color color
+                           :color nil)
+            (+ s (* p tau))) 0 ps))
+
+(defn draw-pies
+  "Draw pie charts from the current datapoint."
+  [state data ctx]
+  (let [proj (degrees-to-px (:src state) (dst state))]
+    (doseq [elem data]
+      (let [cc (keyword (:probe_cc elem))
+            geo-data  (cc (:geo-data state))
+            center    (sc.rect/center (:bbox geo-data))
+            center-px (proj center)
+
+            total       (:measurement_count  elem)
+            p-anomaly   (/ (:anomaly_count   elem) total)
+            p-confirmed (/ (:confirmed_count elem) total)
+            p-failure   (/ (:failure_count   elem) total)
+            p-ok        (/ (:ok_count        elem) total)]
+        (draw-pie center-px (max (min (/ total 100) 50) 5) ctx
+                  [p-ok        :seagreen]
+                  [p-anomaly   :darkorange]
+                  [p-confirmed :crimson]
+                  [p-failure   :gray])))))
 
 (defn paint
   "Paint the map to the canvas given its state and
   a datapoint."
   [state data ctx]
+  (draw-visible-ccs state ctx)
+  (draw-visible-country-labels state ctx)
   (when data
-    (println data))
-  (draw-visible-ccs state ctx))
+    (draw-pies state data ctx)))

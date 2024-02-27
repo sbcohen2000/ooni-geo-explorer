@@ -275,8 +275,5 @@
 
 (defn reload!
   []
-  (setup-resize-handler)
-  (setup-pointer-capture-handler)
-  (setup-wheel-handler)
-  (setup-clock)
+  (repaint @app-state)
   (println "reload!"))

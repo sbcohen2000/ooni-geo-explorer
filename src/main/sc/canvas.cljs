@@ -64,15 +64,20 @@
   (stroke-style color ctx)
   (.stroke ctx))
 
-(defn circle
-  [[x y] r ctx &
-   {:keys [color width]
-    :or {color :black width 1.0}}]
+(defn arc
+  [[x y] r t0 t1 ctx &
+   {:keys [color fill-color width]
+    :or {color :black fill-color nil width 1.0}}]
   (stroke-width width ctx)
   (.beginPath ctx)
-  (.arc ctx x y r 0 (* 2 js/Math.PI) false)
-  (fill-style color ctx)
-  (.fill ctx))
+  (.arc ctx x y r t0 t1 false)
+  (.lineTo ctx x y)
+  (when color
+    (stroke-style color ctx)
+    (.stroke ctx))
+  (when fill-color
+    (fill-style fill-color ctx)
+    (.fill ctx)))
 
 (defn rectangle
   "Draw a rectangle to the canvas."
@@ -107,13 +112,26 @@
     (fill-style fill-color ctx)
     (.fill ctx)))
 
+(defn text-width
+  "Find the width of text as it would be rendered to the canvas."
+  [text ctx &
+   {:keys [size] :or {size 14}}]
+  (set! (.-font ctx) (str size "px sans"))
+  (let [res (.measureText ctx text)]
+    (.-width res)))
+
 (defn text
   "Draw text to the canvas."
-  [text [x y] ctx & {:keys [fill-color size] :or {fill-color :black size 14}}]
+  [text [x y] ctx &
+   {:keys [fill-color size align]
+    :or {fill-color :black size 14 align :left}}]
   (set! (.-font ctx) (str size "px sans"))
   (set! (.-textBaseline ctx) "top")
+  (set! (.-textAlign ctx) (name align))
+  (set! (.-lineJoin ctx) "round")
   (stroke-width 3 ctx)
   (stroke-style :white ctx)
   (.strokeText ctx text x y)
   (fill-style fill-color ctx)
-  (.fillText ctx text x y))
+  (.fillText ctx text x y)
+  (set! (.-lineJoin ctx) "miter"))

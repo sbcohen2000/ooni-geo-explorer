@@ -1,4 +1,5 @@
-(ns sc.rect)
+(ns sc.rect
+  (:require [sc.vector2 :as v]))
 
 (defn from-bounds
   [left top right bottom]
@@ -44,17 +45,10 @@
   [[x y w h] [ox oy]]
   [(+ x ox) (+ y oy) w h])
 
-(defn scale
-  ([[x y w h] s]
-   [(* s x) (* s y) (* s w) (* s h)])
-  ([[x y w h] sx sy]
-   [(* sx x) (* sy y) (* sx w) (* sy h)]))
-
-(defn shrink
-  ([[x y w h] s]
-   (let [w' (* w s)
-         h' (* h s)]
-     [(+ x (/ w' 2)) (+ y (/ h' 2)) w' h'])))
+(defn center
+  "Find the center point of the rectangle."
+  [[x y w h]]
+  (v/+ [x y] (v/* [w h] 0.5)))
 
 (defn scale-to-fit
   "Scale the rectangle such that it fits within a box
@@ -78,3 +72,8 @@
        (>= py y)
        (< px (+ x w))
        (< py (+ y h))))
+
+(defn area
+  "Find the area of a rectangle."
+  [[_ _ w h]]
+  (* w h))
